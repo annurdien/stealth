@@ -1,0 +1,8 @@
+stealth
+/stealth
+.env
+/vendor/
+/.idea/
+/.vscode/
+*.swp
+*.out
