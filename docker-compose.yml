@@ -1,0 +1,21 @@
+services:
+  stealth:
+    build: .
+    container_name: stealth
+    restart: unless-stopped
+    ports:
+      - "8191:8191"
+      - "8192:8192"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8191
+      - LOG_LEVEL=info
+      - HEADLESS=true
+      - PROMETHEUS_ENABLED=false
+      - PROMETHEUS_PORT=8192
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
