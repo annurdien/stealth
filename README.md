@@ -1,28 +1,28 @@
 # Stealth
 
-A high-performance Go alternative to FlareSolverr with native header injection, JSON payload support, and CDP-based Turnstile solving.
+A Go-based alternative to FlareSolverr for Cloudflare challenge resolution.
 
 ## Features
 
-- **Clean REST API** — no legacy `cmd` field routing
-- **Native Header Injection** — custom headers passed directly via `fetch()` injection
-- **JSON Payload Support** — clean JSON responses, no HTML wrapping
-- **CDP Turnstile Solving** — coordinate-based mouse click, not fragile Tab+Space
-- **Proxy Auth via CDP** — works in headless mode (no Chrome extension hack)
-- **Session Management** — in-memory sessions with optional TTL auto-expiry
-- **Graceful Shutdown** — SIGTERM closes all Chrome processes cleanly
+- **REST API**: Standard HTTP methods and JSON routing.
+- **Header Injection**: Custom headers passed via `fetch()`.
+- **JSON Payload Support**: Returns JSON responses.
+- **CDP Turnstile Solving**: Uses coordinate-based mouse clicks for CAPTCHAs.
+- **Proxy Auth via CDP**: Supports headless mode proxy authentication.
+- **Session Management**: In-memory sessions with TTL auto-expiry.
+- **Graceful Shutdown**: SIGTERM handling for Chrome processes.
 
 ## Quick Start
 
 ```bash
-# Run directly
+# Run locally
 go run ./cmd/stealth
 
-# Or with Docker
+# Run with Docker
 docker compose up
 ```
 
-The service starts on `http://localhost:8191`.
+Service starts on `http://localhost:8191`.
 
 ## Environment Variables
 
@@ -35,17 +35,17 @@ The service starts on `http://localhost:8191`.
 | `PROMETHEUS_ENABLED` | `false` | Enable Prometheus metrics |
 | `PROMETHEUS_PORT` | `8192` | Prometheus port |
 
-## API
+## API Reference
 
 ### `GET /`
-Returns service info.
+Service information.
 
 ### `GET /health`
-Returns `{"status":"ok"}`. Used by Docker health checks.
+Health check endpoint.
 
 ### `POST /v2/request`
 
-Solve a Cloudflare challenge and execute an HTTP request.
+Solves challenges and executes HTTP requests.
 
 **Request:**
 ```json
@@ -85,27 +85,19 @@ Solve a Cloudflare challenge and execute an HTTP request.
 ```
 
 ### `POST /v2/sessions`
+Create a session.
 ```json
 { "session": "my-id", "ttl": 300, "proxy": { "url": "http://ip:port" } }
 ```
 
 ### `GET /v2/sessions`
-Returns all active session IDs.
+List active session IDs.
 
 ### `DELETE /v2/sessions/:id`
-Destroys a session and closes its browser.
+Destroy a session and close its browser instance.
 
-## Architecture
+## Architecture Flow
 
-```
-Request → Fiber Server → Session Manager → Solver Engine
-                                               ↓
-                                    Phase 1: Navigate base domain
-                                    → Detect Cloudflare challenge
-                                    → Solve Turnstile (CDP coordinates)
-                                    → Wait for selectors to clear
-                                               ↓
-                                    Phase 2: Inject fetch()
-                                    → Execute with client headers/body
-                                    → Return clean JSON response
-```
+1. **Request** → Fiber Server → Session Manager → Solver Engine
+2. **Phase 1**: Navigate base domain → Detect challenge → Solve Turnstile → Wait for selectors to clear
+3. **Phase 2**: Inject `fetch()` → Execute with headers/body → Return JSON response
