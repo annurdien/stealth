@@ -32,12 +32,16 @@ const jsFetchScript = `(url, method, headers, body) => {
 		.then(res => res.text().then(text => ({
 			status: res.status,
 			body: text,
-			error: ''
+			error: '',
+			userAgent: navigator.userAgent,
+			url: window.location.href
 		})))
 		.catch(err => ({
 			status: 0,
 			body: '',
-			error: err.message
+			error: err.message,
+			userAgent: navigator.userAgent,
+			url: window.location.href
 		}));
 }`
 
@@ -152,22 +156,12 @@ func executeFetch(page *rod.Page, req *models.V1Request) (*models.Solution, erro
 
 	status := int(res.Value.Get("status").Int())
 	body := res.Value.Get("body").String()
+	userAgent := res.Value.Get("userAgent").String()
+	resolvedURL := res.Value.Get("url").String()
 
 	cookies, err := extractCookies(page)
 	if err != nil {
 		return nil, fmt.Errorf("cookie extraction failed: %w", err)
-	}
-
-	ua, _ := page.Eval(`() => navigator.userAgent`)
-	userAgent := ""
-	if ua != nil {
-		userAgent = ua.Value.String()
-	}
-
-	finalURL, _ := page.Eval(`() => window.location.href`)
-	resolvedURL := req.URL
-	if finalURL != nil {
-		resolvedURL = finalURL.Value.String()
 	}
 
 	solution := &models.Solution{
@@ -194,16 +188,13 @@ func buildCookieOnlySolution(page *rod.Page, req *models.V1Request) (*models.Sol
 		return nil, err
 	}
 
-	ua, _ := page.Eval(`() => navigator.userAgent`)
 	userAgent := ""
-	if ua != nil {
-		userAgent = ua.Value.String()
-	}
-
-	finalURL, _ := page.Eval(`() => window.location.href`)
 	resolvedURL := req.URL
-	if finalURL != nil {
-		resolvedURL = finalURL.Value.String()
+
+	res, err := page.Eval(`() => ({ userAgent: navigator.userAgent, url: window.location.href })`)
+	if err == nil && res != nil {
+		userAgent = res.Value.Get("userAgent").String()
+		resolvedURL = res.Value.Get("url").String()
 	}
 
 	solution := &models.Solution{

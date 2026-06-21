@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/annurdien/stealth/internal/api"
@@ -22,7 +23,13 @@ func main() {
 
 	log.Printf("Stealth %s starting on %s:%s", version, host, port)
 
-	sm := session.NewManager()
+	maxTabsStr := envOr("MAX_TABS", "10")
+	maxTabs, err := strconv.Atoi(maxTabsStr)
+	if err != nil || maxTabs <= 0 {
+		maxTabs = 10
+	}
+
+	sm := session.NewManager(maxTabs)
 
 	app := api.NewServer(sm, version)
 
