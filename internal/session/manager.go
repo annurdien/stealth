@@ -14,6 +14,7 @@ import (
 )
 
 // SessionContext holds a live browser session.
+// In the browser pool architecture, Browser is an Incognito context.
 type SessionContext struct {
 	ID        string
 	Page      *rod.Page
@@ -22,6 +23,7 @@ type SessionContext struct {
 	LastUsed  time.Time
 	TTL       time.Duration // 0 means no auto-expiry
 	Proxy     *models.ProxyConfig
+	poolKey   string // Key to decrement refcount in the pool
 
 	mu sync.Mutex // Serializes requests on the same page
 }
@@ -32,9 +34,17 @@ func (s *SessionContext) Lock() { s.mu.Lock() }
 // Unlock releases the session-level lock.
 func (s *SessionContext) Unlock() { s.mu.Unlock() }
 
-// Manager stores and lifecycle-manages browser sessions.
+// pooledBrowser represents a physical headless Chrome process.
+type pooledBrowser struct {
+	browser  *rod.Browser
+	refCount int
+	lastUsed time.Time
+}
+
+// Manager stores and lifecycle-manages browser sessions and the physical browser pool.
 type Manager struct {
 	sessions map[string]*SessionContext
+	pool     map[string]*pooledBrowser
 	mu       sync.RWMutex
 	done     chan struct{} // Signals the reaper to stop
 }
@@ -43,6 +53,7 @@ type Manager struct {
 func NewManager() *Manager {
 	m := &Manager{
 		sessions: make(map[string]*SessionContext),
+		pool:     make(map[string]*pooledBrowser),
 		done:     make(chan struct{}),
 	}
 	go m.reapLoop()
@@ -65,23 +76,44 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 		return sess, nil
 	}
 
-	browser, err := solver.LaunchBrowser(req.Proxy)
-	if err != nil {
-		return nil, fmt.Errorf("failed to launch browser: %w", err)
+	poolKey := req.Proxy.HashKey()
+	pb, exists := m.pool[poolKey]
+	if !exists {
+		// Launch new physical browser for this proxy configuration
+		browser, err := solver.LaunchBrowser(req.Proxy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to launch pooled browser: %w", err)
+		}
+		pb = &pooledBrowser{
+			browser:  browser,
+			refCount: 0,
+			lastUsed: time.Now(),
+		}
+		m.pool[poolKey] = pb
+		log.Printf("[pool] launched new physical browser for proxy key: %q", poolKey)
 	}
 
-	page, err := solver.CreateStealthPage(browser)
+	// Create an incognito context for this session for strict isolation
+	incognitoBrowser, err := pb.browser.Incognito()
 	if err != nil {
-		browser.MustClose()
+		return nil, fmt.Errorf("failed to create incognito context: %w", err)
+	}
+
+	page, err := solver.CreateStealthPage(incognitoBrowser)
+	if err != nil {
+		incognitoBrowser.MustClose()
 		return nil, fmt.Errorf("failed to create page: %w", err)
 	}
 
 	if req.Proxy != nil && req.Proxy.Username != "" {
 		if err := solver.EnableProxyAuth(page, req.Proxy.Username, req.Proxy.Password); err != nil {
-			browser.MustClose()
+			incognitoBrowser.MustClose()
 			return nil, fmt.Errorf("failed to enable proxy auth: %w", err)
 		}
 	}
+
+	pb.refCount++
+	pb.lastUsed = time.Now()
 
 	ttl := time.Duration(0)
 	if req.TTL > 0 {
@@ -91,11 +123,12 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 	sess := &SessionContext{
 		ID:        id,
 		Page:      page,
-		Browser:   browser,
+		Browser:   incognitoBrowser,
 		CreatedAt: time.Now(),
 		LastUsed:  time.Now(),
 		TTL:       ttl,
 		Proxy:     req.Proxy,
+		poolKey:   poolKey,
 	}
 
 	m.sessions[id] = sess
@@ -104,7 +137,6 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 }
 
 // Get retrieves a session by ID and updates its LastUsed timestamp.
-// Returns (session, true) if found, or (nil, false) if not found.
 func (m *Manager) Get(id string) (*SessionContext, bool) {
 	m.mu.RLock()
 	sess, exists := m.sessions[id]
@@ -113,14 +145,16 @@ func (m *Manager) Get(id string) (*SessionContext, bool) {
 	if exists {
 		m.mu.Lock()
 		sess.LastUsed = time.Now()
+		if pb, ok := m.pool[sess.poolKey]; ok {
+			pb.lastUsed = time.Now()
+		}
 		m.mu.Unlock()
 	}
 
 	return sess, exists
 }
 
-// Destroy closes the browser and removes the session from the map.
-// Returns true if the session existed, false if not found.
+// Destroy closes the browser incognito context and removes the session from the map.
 func (m *Manager) Destroy(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -130,8 +164,16 @@ func (m *Manager) Destroy(id string) bool {
 		return false
 	}
 
+	// Close the incognito browser (which automatically closes the page and clears isolated storage)
 	sess.Browser.MustClose()
 	delete(m.sessions, id)
+
+	// Decrement pool refcount
+	if pb, ok := m.pool[sess.poolKey]; ok {
+		pb.refCount--
+		pb.lastUsed = time.Now()
+	}
+
 	log.Printf("[session] destroyed session %s", id)
 	return true
 }
@@ -148,7 +190,7 @@ func (m *Manager) List() []string {
 	return ids
 }
 
-// DestroyAll closes all sessions. Called during graceful shutdown.
+// DestroyAll closes all sessions and pooled browsers. Called during graceful shutdown.
 func (m *Manager) DestroyAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -157,6 +199,12 @@ func (m *Manager) DestroyAll() {
 		sess.Browser.MustClose()
 		delete(m.sessions, id)
 		log.Printf("[session] shutdown: destroyed session %s", id)
+	}
+
+	for key, pb := range m.pool {
+		pb.browser.MustClose()
+		delete(m.pool, key)
+		log.Printf("[pool] shutdown: destroyed physical browser %q", key)
 	}
 }
 
@@ -167,7 +215,7 @@ func (m *Manager) Stop() {
 }
 
 // reapLoop runs on a 30-second ticker and cleans up sessions that have
-// exceeded their TTL based on the LastUsed timestamp.
+// exceeded their TTL, as well as idle pooled browsers.
 func (m *Manager) reapLoop() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -187,12 +235,30 @@ func (m *Manager) reapExpired() {
 	defer m.mu.Unlock()
 
 	now := time.Now()
+
+	// 1. Reap expired sessions
 	for id, sess := range m.sessions {
 		if sess.TTL > 0 && now.Sub(sess.LastUsed) > sess.TTL {
 			log.Printf("[session] reaping expired session %s (idle=%v TTL=%v)",
 				id, now.Sub(sess.LastUsed).Round(time.Second), sess.TTL)
+
 			sess.Browser.MustClose()
 			delete(m.sessions, id)
+
+			if pb, ok := m.pool[sess.poolKey]; ok {
+				pb.refCount--
+				pb.lastUsed = now
+			}
+		}
+	}
+
+	// 2. Reap idle physical browsers (0 active sessions for > 5 minutes)
+	idleTimeout := 5 * time.Minute
+	for key, pb := range m.pool {
+		if pb.refCount <= 0 && now.Sub(pb.lastUsed) > idleTimeout {
+			log.Printf("[pool] reaping idle physical browser %q (idle=%v)", key, now.Sub(pb.lastUsed).Round(time.Second))
+			pb.browser.MustClose()
+			delete(m.pool, key)
 		}
 	}
 }
