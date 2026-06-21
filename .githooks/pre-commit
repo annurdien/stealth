@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Format all staged .go files
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$')
+
+if [ -n "$STAGED_GO_FILES" ]; then
+    echo "Running gofmt on staged Go files..."
+    for FILE in $STAGED_GO_FILES; do
+        gofmt -w "$FILE"
+        git add "$FILE"
+    done
+fi
+
+exit 0
