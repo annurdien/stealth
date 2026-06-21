@@ -26,11 +26,6 @@ func main() {
 
 	app := api.NewServer(sm, version)
 
-	if os.Getenv("PROMETHEUS_ENABLED") == "true" {
-		promPort := envOr("PROMETHEUS_PORT", "8192")
-		go startPrometheus(promPort)
-	}
-
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -54,15 +49,6 @@ func main() {
 	sm.Stop()
 
 	log.Println("Shutdown complete.")
-}
-
-// startPrometheus launches the Prometheus metrics exporter on a separate port.
-// It is a lightweight no-op if the prometheus/client_golang package is not used.
-func startPrometheus(port string) {
-	log.Printf("Prometheus metrics available at http://0.0.0.0:%s/metrics", port)
-	// The Prometheus default HTTP mux serves /metrics automatically
-	// when using prometheus/client_golang.
-	// Add: promhttp.Handler() on a net/http server here if needed.
 }
 
 // envOr returns the value of the environment variable key,
