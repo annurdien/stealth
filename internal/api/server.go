@@ -95,6 +95,14 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 			})
 		}
 
+		if len(req.URL) < 4 || (req.URL[:4] != "http" && req.URL[:5] != "https") {
+			return c.Status(fiber.StatusBadRequest).JSON(models.V2Response{
+				Status:  "error",
+				Message: "Invalid URL scheme: only http:// and https:// are supported",
+				Version: solver.Version,
+			})
+		}
+
 		startTs := time.Now().UnixMilli()
 
 		var sess *session.SessionContext
