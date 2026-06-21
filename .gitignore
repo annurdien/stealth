@@ -6,3 +6,4 @@ stealth
 /.vscode/
 *.swp
 *.out
+/scratch/
