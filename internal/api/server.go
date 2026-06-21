@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"log"
 	"time"
 
@@ -148,7 +147,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 		sess.Lock()
 		defer sess.Unlock()
 
-		resp, err := solver.Solve(context.Background(), sess.Page, &req)
+		resp, err := solver.Solve(c.UserContext(), sess.Page, &req)
 		if err != nil {
 			return c.JSON(&models.V2Response{
 				Status:         "error",
