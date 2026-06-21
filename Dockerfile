@@ -36,7 +36,6 @@ USER stealth
 RUN mkdir -p "/app/.config/chromium/Crash Reports/pending"
 
 EXPOSE 8191
-EXPOSE 8192
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8191/health || exit 1
