@@ -1,0 +1,42 @@
+name: E2E Canary Tests
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+
+      - name: Start Stealth via Docker Compose
+        run: |
+          docker compose up -d
+          # Wait up to 30 seconds for the service to be healthy
+          for i in {1..15}; do
+            if curl -s http://localhost:8191/health | grep '"status":"ok"'; then
+              echo "Stealth is healthy!"
+              break
+            fi
+            echo "Waiting for Stealth..."
+            sleep 2
+          done
+
+      - name: Run Canary E2E Test
+        run: |
+          cd tools/canary
+          go run main.go
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down
