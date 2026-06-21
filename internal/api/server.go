@@ -38,11 +38,11 @@ func NewServer(sm *session.Manager, version string) *fiber.App {
 	app.Get("/", indexHandler(version))
 	app.Get("/health", healthHandler)
 
-	v2 := app.Group("/v2")
-	v2.Post("/request", requestHandler(sm))
-	v2.Post("/sessions", sessionCreateHandler(sm))
-	v2.Get("/sessions", sessionListHandler(sm))
-	v2.Delete("/sessions/:id", sessionDestroyHandler(sm))
+	v1 := app.Group("/v1")
+	v1.Post("/request", requestHandler(sm))
+	v1.Post("/sessions", sessionCreateHandler(sm))
+	v1.Get("/sessions", sessionListHandler(sm))
+	v1.Delete("/sessions/:id", sessionDestroyHandler(sm))
 
 	return app
 }
@@ -75,12 +75,12 @@ func healthHandler(c *fiber.Ctx) error {
 	return c.JSON(models.HealthResponse{Status: "ok"})
 }
 
-// requestHandler handles POST /v2/request — the core solve endpoint.
+// requestHandler handles POST /v1/request — the core solve endpoint.
 func requestHandler(sm *session.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		var req models.V2Request
+		var req models.V1Request
 		if err := c.BodyParser(&req); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(models.V2Response{
+			return c.Status(fiber.StatusBadRequest).JSON(models.V1Response{
 				Status:  "error",
 				Message: "Invalid JSON body: " + err.Error(),
 				Version: solver.Version,
@@ -88,7 +88,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 		}
 
 		if req.URL == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(models.V2Response{
+			return c.Status(fiber.StatusBadRequest).JSON(models.V1Response{
 				Status:  "error",
 				Message: "Field 'url' is required",
 				Version: solver.Version,
@@ -96,7 +96,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 		}
 
 		if len(req.URL) < 4 || (req.URL[:4] != "http" && req.URL[:5] != "https") {
-			return c.Status(fiber.StatusBadRequest).JSON(models.V2Response{
+			return c.Status(fiber.StatusBadRequest).JSON(models.V1Response{
 				Status:  "error",
 				Message: "Invalid URL scheme: only http:// and https:// are supported",
 				Version: solver.Version,
@@ -119,7 +119,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 					Proxy:   req.Proxy,
 				})
 				if err != nil {
-					return c.JSON(&models.V2Response{
+					return c.JSON(&models.V1Response{
 						Status:         "error",
 						Message:        "Error creating session: " + err.Error(),
 						StartTimestamp: startTs,
@@ -135,7 +135,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 				Proxy: req.Proxy,
 			})
 			if err != nil {
-				return c.JSON(&models.V2Response{
+				return c.JSON(&models.V1Response{
 					Status:         "error",
 					Message:        "Error launching browser: " + err.Error(),
 					StartTimestamp: startTs,
@@ -157,7 +157,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 
 		resp, err := solver.Solve(c.UserContext(), sess.Page, &req)
 		if err != nil {
-			return c.JSON(&models.V2Response{
+			return c.JSON(&models.V1Response{
 				Status:         "error",
 				Message:        "Unexpected error: " + err.Error(),
 				StartTimestamp: startTs,
@@ -170,7 +170,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 	}
 }
 
-// sessionCreateHandler handles POST /v2/sessions.
+// sessionCreateHandler handles POST /v1/sessions.
 func sessionCreateHandler(sm *session.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var req models.SessionCreateRequest
@@ -197,7 +197,7 @@ func sessionCreateHandler(sm *session.Manager) fiber.Handler {
 	}
 }
 
-// sessionListHandler handles GET /v2/sessions.
+// sessionListHandler handles GET /v1/sessions.
 func sessionListHandler(sm *session.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		return c.JSON(models.SessionResponse{
@@ -208,7 +208,7 @@ func sessionListHandler(sm *session.Manager) fiber.Handler {
 	}
 }
 
-// sessionDestroyHandler handles DELETE /v2/sessions/:id.
+// sessionDestroyHandler handles DELETE /v1/sessions/:id.
 func sessionDestroyHandler(sm *session.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		id := c.Params("id")

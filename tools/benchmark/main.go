@@ -66,7 +66,7 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	stealthAPI := "http://127.0.0.1:8191/v2/request"
+	stealthAPI := "http://127.0.0.1:8191/v1/request"
 
 	for _, target := range targetURLs {
 		fmt.Println("========================================")

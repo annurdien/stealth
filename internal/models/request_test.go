@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestV2Request_EffectiveMethod(t *testing.T) {
+func TestV1Request_EffectiveMethod(t *testing.T) {
 	tests := []struct {
 		name     string
 		method   string
@@ -17,7 +17,7 @@ func TestV2Request_EffectiveMethod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &V2Request{Method: tt.method}
+			req := &V1Request{Method: tt.method}
 			if got := req.EffectiveMethod(); got != tt.expected {
 				t.Errorf("EffectiveMethod() = %v, want %v", got, tt.expected)
 			}
@@ -25,7 +25,7 @@ func TestV2Request_EffectiveMethod(t *testing.T) {
 	}
 }
 
-func TestV2Request_EffectiveTimeout(t *testing.T) {
+func TestV1Request_EffectiveTimeout(t *testing.T) {
 	tests := []struct {
 		name       string
 		maxTimeout int
@@ -38,7 +38,7 @@ func TestV2Request_EffectiveTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &V2Request{MaxTimeout: tt.maxTimeout}
+			req := &V1Request{MaxTimeout: tt.maxTimeout}
 			if got := req.EffectiveTimeout(); got != tt.expected {
 				t.Errorf("EffectiveTimeout() = %v, want %v", got, tt.expected)
 			}

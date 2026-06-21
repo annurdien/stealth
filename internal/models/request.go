@@ -1,7 +1,7 @@
 package models
 
-// V2Request is the input payload for POST /v2/request.
-type V2Request struct {
+// V1Request is the input payload for POST /v1/request.
+type V1Request struct {
 	// URL is the target URL to navigate to and/or fetch from. Required.
 	URL string `json:"url"`
 
@@ -52,7 +52,7 @@ type V2Request struct {
 }
 
 // EffectiveMethod returns the resolved HTTP method, defaulting to GET.
-func (r *V2Request) EffectiveMethod() string {
+func (r *V1Request) EffectiveMethod() string {
 	if r.Method == "" {
 		return "GET"
 	}
@@ -60,7 +60,7 @@ func (r *V2Request) EffectiveMethod() string {
 }
 
 // EffectiveTimeout returns the timeout duration in milliseconds, defaulting to 60000.
-func (r *V2Request) EffectiveTimeout() int {
+func (r *V1Request) EffectiveTimeout() int {
 	if r.MaxTimeout <= 0 {
 		return 60000
 	}
@@ -92,7 +92,7 @@ type Cookie struct {
 	SameSite string  `json:"sameSite,omitempty"` // "Strict", "Lax", "None"
 }
 
-// SessionCreateRequest is the input for POST /v2/sessions.
+// SessionCreateRequest is the input for POST /v1/sessions.
 type SessionCreateRequest struct {
 	// Session is an optional user-defined session ID.
 	// If empty, a UUID is generated.

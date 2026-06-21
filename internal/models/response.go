@@ -1,8 +1,8 @@
 package models
 
-// V2Response is the unified response format for all /v2/ endpoints.
+// V1Response is the unified response format for all /v1/ endpoints.
 // Errors use status="error" with solution=nil.
-type V2Response struct {
+type V1Response struct {
 	// Status is "ok" or "error".
 	Status string `json:"status"`
 

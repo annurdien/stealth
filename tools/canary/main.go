@@ -23,7 +23,7 @@ func main() {
 	fmt.Println("       Stealth E2E Canary Test          ")
 	fmt.Println("========================================")
 
-	stealthAPI := "http://127.0.0.1:8191/v2/request"
+	stealthAPI := "http://127.0.0.1:8191/v1/request"
 	client := &http.Client{Timeout: 90 * time.Second}
 
 	successCount := 0

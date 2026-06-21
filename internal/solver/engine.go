@@ -46,7 +46,7 @@ const jsFetchScript = `(url, method, headers, body) => {
 //  2. Navigates to the base domain to clear any Cloudflare challenge
 //  3. Solves Turnstile if detected
 //  4. Executes the fetch() injection with the client's headers/body
-func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.V2Response, error) {
+func Solve(ctx context.Context, page *rod.Page, req *models.V1Request) (*models.V1Response, error) {
 	startTs := time.Now().UnixMilli()
 
 	timeoutMs := req.EffectiveTimeout()
@@ -117,7 +117,7 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.
 		}
 	}
 
-	return &models.V2Response{
+	return &models.V1Response{
 		Status:         "ok",
 		Message:        challengeMessage,
 		StartTimestamp: startTs,
@@ -128,7 +128,7 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.
 }
 
 // executeFetch injects the fetch() script into the page and returns the result.
-func executeFetch(page *rod.Page, req *models.V2Request) (*models.Solution, error) {
+func executeFetch(page *rod.Page, req *models.V1Request) (*models.Solution, error) {
 	method := req.EffectiveMethod()
 	headers := req.Headers
 	if headers == nil {
@@ -188,7 +188,7 @@ func executeFetch(page *rod.Page, req *models.V2Request) (*models.Solution, erro
 }
 
 // buildCookieOnlySolution returns cookies and userAgent without executing a fetch.
-func buildCookieOnlySolution(page *rod.Page, req *models.V2Request) (*models.Solution, error) {
+func buildCookieOnlySolution(page *rod.Page, req *models.V1Request) (*models.Solution, error) {
 	cookies, err := extractCookies(page)
 	if err != nil {
 		return nil, err
@@ -284,9 +284,9 @@ func extractBaseURL(rawURL string) (string, error) {
 	return u.Scheme + "://" + u.Host, nil
 }
 
-// errorResp builds a V2Response for error cases.
-func errorResp(startTs int64, message string) *models.V2Response {
-	return &models.V2Response{
+// errorResp builds a V1Response for error cases.
+func errorResp(startTs int64, message string) *models.V1Response {
+	return &models.V1Response{
 		Status:         "error",
 		Message:        message,
 		StartTimestamp: startTs,
