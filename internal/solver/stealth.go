@@ -49,8 +49,10 @@ func LaunchBrowser(proxy *models.ProxyConfig) (*rod.Browser, error) {
 		Set("window-size", "1920,1080").
 		Set("ignore-certificate-errors").
 		Set("ignore-ssl-errors").
-		Set("disable-features", "LocalNetworkAccessChecks").
-		Set("disable-search-engine-choice-screen")
+		Set("disable-features", "LocalNetworkAccessChecks,Translate,OptimizationHints,MediaRouter").
+		Set("disable-renderer-backgrounding").
+		Set("disable-background-timer-throttling").
+		Set("disable-backgrounding-occluded-windows")
 
 	headless := os.Getenv("HEADLESS") != "false"
 	l = l.Headless(headless)
