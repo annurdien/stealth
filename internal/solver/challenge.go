@@ -2,7 +2,6 @@ package solver
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/go-rod/rod"
 )
@@ -64,39 +63,47 @@ var MediaBlockPatterns = []string{
 	"*.WOFF", "*.WOFF2", "*.TTF", "*.OTF", "*.EOT",
 }
 
-// DetectChallenge inspects the current page to determine its challenge state.
+const detectChallengeScript = `() => {
+	const title = document.title || '';
+	const accessDeniedTitles = ["Access denied", "Attention Required! | Cloudflare"];
+	for (const t of accessDeniedTitles) {
+		if (title.startsWith(t)) return 2;
+	}
+	const accessDeniedSelectors = ["div.cf-error-title span.cf-code-label span", "#cf-error-details div.cf-error-overview h1"];
+	for (const sel of accessDeniedSelectors) {
+		if (document.querySelector(sel)) return 2;
+	}
+	const challengeTitles = ["Just a moment...", "DDoS-Guard"];
+	for (const t of challengeTitles) {
+		if (title.toLowerCase() === t.toLowerCase()) return 1;
+	}
+	const challengeSelectors = [
+		"#cf-challenge-running", ".ray_id", ".attack-box", "#cf-please-wait",
+		"#challenge-spinner", "#trk_jschal_js", "#turnstile-wrapper", ".lds-ring",
+		"td.info #js_info", "div.vc div.text-box h2"
+	];
+	for (const sel of challengeSelectors) {
+		if (document.querySelector(sel)) return 1;
+	}
+	return 0;
+}`
+
+// DetectChallenge inspects the current page to determine its challenge state
+// using a single batched JavaScript evaluation to minimize CDP overhead.
 func DetectChallenge(page *rod.Page) ChallengeResult {
-	title, err := page.Eval(`() => document.title`)
+	res, err := page.Eval(detectChallengeScript)
 	if err != nil {
 		return ChallengeNone
 	}
-	pageTitle := title.Value.String()
 
-	for _, t := range AccessDeniedTitles {
-		if strings.HasPrefix(pageTitle, t) {
-			return ChallengeAccessDenied
-		}
+	switch res.Value.Int() {
+	case 1:
+		return ChallengeFound
+	case 2:
+		return ChallengeAccessDenied
+	default:
+		return ChallengeNone
 	}
-
-	for _, sel := range AccessDeniedSelectors {
-		if elementExists(page, sel) {
-			return ChallengeAccessDenied
-		}
-	}
-
-	for _, t := range ChallengeTitles {
-		if strings.EqualFold(pageTitle, t) {
-			return ChallengeFound
-		}
-	}
-
-	for _, sel := range ChallengeSelectors {
-		if elementExists(page, sel) {
-			return ChallengeFound
-		}
-	}
-
-	return ChallengeNone
 }
 
 // WaitForChallengeResolution polls until all challenge selectors disappear
@@ -108,47 +115,11 @@ func WaitForChallengeResolution(page *rod.Page, timeoutMs int) error {
 	}
 
 	for attempt := 0; attempt < deadline; attempt++ {
-		allClear := true
-
-		titleResult, err := page.Eval(`() => document.title`)
-		if err == nil {
-			pageTitle := titleResult.Value.String()
-			for _, t := range ChallengeTitles {
-				if strings.EqualFold(pageTitle, t) {
-					allClear = false
-					break
-				}
-			}
-		}
-
-		if allClear {
-			for _, sel := range ChallengeSelectors {
-				if elementExists(page, sel) {
-					allClear = false
-					break
-				}
-			}
-		}
-
-		if allClear {
+		if DetectChallenge(page) == ChallengeNone {
 			return nil
 		}
-
 		_ = SolveTurnstile(page)
 	}
 
 	return fmt.Errorf("challenge not resolved within %d seconds", deadline)
-}
-
-// elementExists returns true if at least one element matching the CSS
-// selector exists in the page's current DOM.
-func elementExists(page *rod.Page, selector string) bool {
-	result, err := page.Eval(
-		`(sel) => !!document.querySelector(sel)`,
-		selector,
-	)
-	if err != nil {
-		return false
-	}
-	return result.Value.Bool()
 }

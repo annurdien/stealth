@@ -61,7 +61,15 @@ func SolveTurnstile(page *rod.Page) error {
 		return fmt.Errorf("mouse click on turnstile failed: %w", err)
 	}
 
-	time.Sleep(2 * time.Second)
+	// Wait for challenge to resolve by checking the DOM state rapidly.
+	// Instead of a hard 2-second sleep, we poll for up to 2 seconds.
+	// Turnstile usually resolves within 100-300ms if successful.
+	for i := 0; i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if DetectChallenge(page) == ChallengeNone {
+			return nil
+		}
+	}
 
 	return nil
 }

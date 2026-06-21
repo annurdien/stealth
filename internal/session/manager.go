@@ -39,32 +39,31 @@ type pooledBrowser struct {
 	browser  *rod.Browser
 	refCount int
 	lastUsed time.Time
+	sem      chan struct{} // Semaphore limiting concurrent incognito contexts
 }
 
-// Manager stores and lifecycle-manages browser sessions and the physical browser pool.
 type Manager struct {
 	sessions map[string]*SessionContext
 	pool     map[string]*pooledBrowser
 	mu       sync.RWMutex
 	done     chan struct{} // Signals the reaper to stop
+	maxTabs  int           // Maximum concurrent tabs per pooled browser
 }
 
 // NewManager creates a Manager and starts the TTL reaper goroutine.
-func NewManager() *Manager {
+func NewManager(maxTabs int) *Manager {
 	m := &Manager{
 		sessions: make(map[string]*SessionContext),
 		pool:     make(map[string]*pooledBrowser),
 		done:     make(chan struct{}),
+		maxTabs:  maxTabs,
 	}
 	go m.reapLoop()
 	return m
 }
 
-// Create creates a new browser session. Idempotent: if the session ID already
-// exists, the existing session is returned without creating a new browser.
 func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	id := req.Session
 	if id == "" {
@@ -73,6 +72,7 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 
 	if sess, exists := m.sessions[id]; exists {
 		log.Printf("[session] reusing existing session %s", id)
+		m.mu.Unlock()
 		return sess, nil
 	}
 
@@ -81,37 +81,54 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 	if !exists {
 		browser, err := solver.LaunchBrowser(req.Proxy)
 		if err != nil {
+			m.mu.Unlock()
 			return nil, fmt.Errorf("failed to launch pooled browser: %w", err)
 		}
 		pb = &pooledBrowser{
 			browser:  browser,
 			refCount: 0,
 			lastUsed: time.Now(),
+			sem:      make(chan struct{}, m.maxTabs),
 		}
 		m.pool[poolKey] = pb
 		log.Printf("[pool] launched new physical browser for proxy key: %q", poolKey)
 	}
 
+	pb.refCount++ // Increment early so the reaper doesn't destroy it while we wait
+	m.mu.Unlock()
+
+	// Wait for a slot to open on this physical browser (Concurrency Semaphore)
+	pb.sem <- struct{}{}
+
 	incognitoBrowser, err := pb.browser.Incognito()
 	if err != nil {
+		<-pb.sem
+		m.mu.Lock()
+		pb.refCount--
+		m.mu.Unlock()
 		return nil, fmt.Errorf("failed to create incognito context: %w", err)
 	}
 
 	page, err := solver.CreateStealthPage(incognitoBrowser)
 	if err != nil {
 		incognitoBrowser.MustClose()
+		<-pb.sem
+		m.mu.Lock()
+		pb.refCount--
+		m.mu.Unlock()
 		return nil, fmt.Errorf("failed to create page: %w", err)
 	}
 
 	if req.Proxy != nil && req.Proxy.Username != "" {
 		if err := solver.EnableProxyAuth(page, req.Proxy.Username, req.Proxy.Password); err != nil {
 			incognitoBrowser.MustClose()
+			<-pb.sem
+			m.mu.Lock()
+			pb.refCount--
+			m.mu.Unlock()
 			return nil, fmt.Errorf("failed to enable proxy auth: %w", err)
 		}
 	}
-
-	pb.refCount++
-	pb.lastUsed = time.Now()
 
 	ttl := time.Duration(0)
 	if req.TTL > 0 {
@@ -129,7 +146,11 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 		poolKey:   poolKey,
 	}
 
+	m.mu.Lock()
+	pb.lastUsed = time.Now()
 	m.sessions[id] = sess
+	m.mu.Unlock()
+
 	log.Printf("[session] created session %s (TTL=%v)", id, ttl)
 	return sess, nil
 }
@@ -168,6 +189,7 @@ func (m *Manager) Destroy(id string) bool {
 	if pb, ok := m.pool[sess.poolKey]; ok {
 		pb.refCount--
 		pb.lastUsed = time.Now()
+		<-pb.sem // Release semaphore slot
 	}
 
 	log.Printf("[session] destroyed session %s", id)
@@ -243,6 +265,7 @@ func (m *Manager) reapExpired() {
 			if pb, ok := m.pool[sess.poolKey]; ok {
 				pb.refCount--
 				pb.lastUsed = now
+				<-pb.sem // Release semaphore slot
 			}
 		}
 	}
