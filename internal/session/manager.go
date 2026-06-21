@@ -79,7 +79,6 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 	poolKey := req.Proxy.HashKey()
 	pb, exists := m.pool[poolKey]
 	if !exists {
-		// Launch new physical browser for this proxy configuration
 		browser, err := solver.LaunchBrowser(req.Proxy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to launch pooled browser: %w", err)
@@ -93,7 +92,6 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 		log.Printf("[pool] launched new physical browser for proxy key: %q", poolKey)
 	}
 
-	// Create an incognito context for this session for strict isolation
 	incognitoBrowser, err := pb.browser.Incognito()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create incognito context: %w", err)
@@ -164,11 +162,9 @@ func (m *Manager) Destroy(id string) bool {
 		return false
 	}
 
-	// Close the incognito browser (which automatically closes the page and clears isolated storage)
 	sess.Browser.MustClose()
 	delete(m.sessions, id)
 
-	// Decrement pool refcount
 	if pb, ok := m.pool[sess.poolKey]; ok {
 		pb.refCount--
 		pb.lastUsed = time.Now()
@@ -236,7 +232,6 @@ func (m *Manager) reapExpired() {
 
 	now := time.Now()
 
-	// 1. Reap expired sessions
 	for id, sess := range m.sessions {
 		if sess.TTL > 0 && now.Sub(sess.LastUsed) > sess.TTL {
 			log.Printf("[session] reaping expired session %s (idle=%v TTL=%v)",
@@ -252,7 +247,6 @@ func (m *Manager) reapExpired() {
 		}
 	}
 
-	// 2. Reap idle physical browsers (0 active sessions for > 5 minutes)
 	idleTimeout := 5 * time.Minute
 	for key, pb := range m.pool {
 		if pb.refCount <= 0 && now.Sub(pb.lastUsed) > idleTimeout {

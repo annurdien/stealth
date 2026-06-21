@@ -80,13 +80,10 @@ type ProxyConfig struct {
 	Password string `json:"password,omitempty"`
 }
 
-// HashKey returns a unique string identifier for this proxy configuration.
-// It is used to pool physical browsers by their proxy settings.
 func (p *ProxyConfig) HashKey() string {
 	if p == nil || p.URL == "" {
 		return ""
 	}
-	// For pooling purposes, combining URL, Username, and Password guarantees uniqueness.
 	return p.URL + "|" + p.Username + "|" + p.Password
 }
 
