@@ -86,4 +86,3 @@ func CreateStealthPage(browser *rod.Browser) (*rod.Page, error) {
 	}
 	return page, nil
 }
-

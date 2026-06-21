@@ -7,8 +7,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 
 	"github.com/annurdien/stealth/internal/models"
 	"github.com/annurdien/stealth/internal/session"
@@ -19,30 +19,23 @@ import (
 // and middleware. It does not start listening — call app.Listen() separately.
 func NewServer(sm *session.Manager, version string) *fiber.App {
 	app := fiber.New(fiber.Config{
-		AppName: "Stealth",
-		// Long write timeout — challenge solving can take up to 60s
+		AppName:      "Stealth",
 		WriteTimeout: 120 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		IdleTimeout:  60 * time.Second,
-		// Return clean JSON errors instead of HTML
 		ErrorHandler: globalErrorHandler,
 	})
 
-	// Recover from panics gracefully
 	app.Use(recover.New(recover.Config{
 		EnableStackTrace: true,
 	}))
 
-	// Attach a unique request ID to each request (useful for log correlation)
 	app.Use(requestid.New())
 
-	// Structured HTTP access logs
 	app.Use(logger.New(logger.Config{
 		Format:     "${time} | ${status} | ${latency} | ${method} ${path}\n",
 		TimeFormat: "2006-01-02 15:04:05",
 	}))
-
-	// Routes
 	app.Get("/", indexHandler(version))
 	app.Get("/health", healthHandler)
 
@@ -109,7 +102,6 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 		var isEphemeral bool
 
 		if req.Session != "" {
-			// Reuse existing or auto-create with provided ID
 			existing, exists := sm.Get(req.Session)
 			if exists {
 				sess = existing
@@ -130,7 +122,6 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 				}
 			}
 		} else {
-			// Ephemeral session: created and destroyed per request
 			isEphemeral = true
 			var err error
 			sess, err = sm.Create(&models.SessionCreateRequest{
@@ -154,7 +145,6 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 			}()
 		}
 
-		// Serialize concurrent requests on the same page
 		sess.Lock()
 		defer sess.Unlock()
 

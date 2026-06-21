@@ -15,29 +15,22 @@ import (
 const version = "1.0.0"
 
 func main() {
-	// Set version in the solver package so all responses include it
 	solver.Version = version
 
-	// --- Configuration from environment ---
 	host := envOr("HOST", "0.0.0.0")
 	port := envOr("PORT", "8191")
 
 	log.Printf("Stealth %s starting on %s:%s", version, host, port)
 
-	// --- Session Manager ---
 	sm := session.NewManager()
 
-	// --- HTTP Server ---
 	app := api.NewServer(sm, version)
 
-	// --- Prometheus metrics (optional) ---
 	if os.Getenv("PROMETHEUS_ENABLED") == "true" {
 		promPort := envOr("PROMETHEUS_PORT", "8192")
 		go startPrometheus(promPort)
 	}
 
-	// --- Graceful Shutdown ---
-	// Listen for SIGINT/SIGTERM in a goroutine so we can block on the signal.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
@@ -51,16 +44,13 @@ func main() {
 
 	log.Printf("Stealth is ready! Listening on http://%s:%s", host, port)
 
-	// Block until a termination signal is received.
 	sig := <-quit
 	log.Printf("Received signal %s — shutting down...", sig)
 
-	// 1. Stop accepting new HTTP connections and wait for in-flight requests
 	if err := app.Shutdown(); err != nil {
 		log.Printf("Error during server shutdown: %v", err)
 	}
 
-	// 2. Close all browser sessions and clean up Chrome processes
 	sm.Stop()
 
 	log.Println("Shutdown complete.")

@@ -72,28 +72,24 @@ func DetectChallenge(page *rod.Page) ChallengeResult {
 	}
 	pageTitle := title.Value.String()
 
-	// 1. Check access denied titles (fatal — IP is blocked)
 	for _, t := range AccessDeniedTitles {
 		if strings.HasPrefix(pageTitle, t) {
 			return ChallengeAccessDenied
 		}
 	}
 
-	// 2. Check access denied selectors
 	for _, sel := range AccessDeniedSelectors {
 		if elementExists(page, sel) {
 			return ChallengeAccessDenied
 		}
 	}
 
-	// 3. Check challenge titles
 	for _, t := range ChallengeTitles {
 		if strings.EqualFold(pageTitle, t) {
 			return ChallengeFound
 		}
 	}
 
-	// 4. Check challenge selectors
 	for _, sel := range ChallengeSelectors {
 		if elementExists(page, sel) {
 			return ChallengeFound
@@ -114,7 +110,6 @@ func WaitForChallengeResolution(page *rod.Page, timeoutMs int) error {
 	for attempt := 0; attempt < deadline; attempt++ {
 		allClear := true
 
-		// Check if any challenge title is still present
 		titleResult, err := page.Eval(`() => document.title`)
 		if err == nil {
 			pageTitle := titleResult.Value.String()
@@ -126,7 +121,6 @@ func WaitForChallengeResolution(page *rod.Page, timeoutMs int) error {
 			}
 		}
 
-		// Check if any challenge selector is still present
 		if allClear {
 			for _, sel := range ChallengeSelectors {
 				if elementExists(page, sel) {
@@ -140,7 +134,6 @@ func WaitForChallengeResolution(page *rod.Page, timeoutMs int) error {
 			return nil
 		}
 
-		// Attempt Turnstile click on each failed cycle
 		_ = SolveTurnstile(page)
 	}
 

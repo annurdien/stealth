@@ -60,26 +60,22 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 		id = uuid.New().String()
 	}
 
-	// Return existing session (idempotent)
 	if sess, exists := m.sessions[id]; exists {
 		log.Printf("[session] reusing existing session %s", id)
 		return sess, nil
 	}
 
-	// Launch a new browser instance
 	browser, err := solver.LaunchBrowser(req.Proxy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to launch browser: %w", err)
 	}
 
-	// Create a stealth page (go-rod/stealth patches applied)
 	page, err := solver.CreateStealthPage(browser)
 	if err != nil {
 		browser.MustClose()
 		return nil, fmt.Errorf("failed to create page: %w", err)
 	}
 
-	// Enable proxy auth interception if credentials provided
 	if req.Proxy != nil && req.Proxy.Username != "" {
 		if err := solver.EnableProxyAuth(page, req.Proxy.Username, req.Proxy.Password); err != nil {
 			browser.MustClose()

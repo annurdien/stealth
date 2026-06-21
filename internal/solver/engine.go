@@ -55,9 +55,6 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.
 
 	page = page.Context(timeoutCtx)
 
-	// --- Setup Phase ---
-
-	// Override user agent if requested
 	if req.UserAgent != "" {
 		uaCmd := proto.EmulationSetUserAgentOverride{UserAgent: req.UserAgent}
 		if err := uaCmd.Call(page); err != nil {
@@ -65,19 +62,15 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.
 		}
 	}
 
-	// Block media resources to speed up navigation
 	if req.DisableMedia {
 		enableMediaBlocking(page)
 	}
 
-	// Inject initial cookies before navigation
 	if len(req.Cookies) > 0 {
 		if err := injectCookies(page, req.Cookies); err != nil {
 			return errorResp(startTs, "Failed to inject cookies: "+err.Error()), nil
 		}
 	}
-
-	// --- Phase 1: Base Domain Clearance ---
 
 	baseURL, err := extractBaseURL(req.URL)
 	if err != nil {
@@ -88,7 +81,6 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.
 		return errorResp(startTs, "Navigation failed: "+err.Error()), nil
 	}
 
-	// Wait for the page to be in a stable state before inspecting
 	_ = page.WaitLoad()
 
 	challengeMessage := "Challenge not detected!"
@@ -107,12 +99,9 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V2Request) (*models.
 		}
 	}
 
-	// Optional post-challenge delay
 	if req.WaitAfterMs > 0 {
 		time.Sleep(time.Duration(req.WaitAfterMs) * time.Millisecond)
 	}
-
-	// --- Phase 2: Payload Execution ---
 
 	var solution *models.Solution
 
@@ -156,7 +145,6 @@ func executeFetch(page *rod.Page, req *models.V2Request) (*models.Solution, erro
 		return nil, fmt.Errorf("fetch eval failed: %w", err)
 	}
 
-	// Check for JS-level errors (CORS, network failure, etc.)
 	jsError := res.Value.Get("error").String()
 	if jsError != "" {
 		return nil, fmt.Errorf("fetch failed: %s", jsError)
