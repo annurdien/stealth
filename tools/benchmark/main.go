@@ -80,67 +80,67 @@ func main() {
 				"url":          target,
 				"disableMedia": true,
 			}
-		if sc.Proxy != nil {
-			payload["proxy"] = sc.Proxy
-		}
-
-		bodyBytes, _ := json.Marshal(payload)
-
-		// Run 3 iterations to warm up session/CDP and get average
-		var totalDur time.Duration
-		iterations := 3
-		var lastIP string
-		var lastStatus string
-
-		for i := 0; i < iterations; i++ {
-			req, _ := http.NewRequest("POST", stealthAPI, bytes.NewBuffer(bodyBytes))
-			req.Header.Set("Content-Type", "application/json")
-
-			start := time.Now()
-			resp, err := client.Do(req)
-			dur := time.Since(start)
-
-			if err != nil {
-				fmt.Printf("  [Iter %d] Error: %v\n", i+1, err)
-				continue
+			if sc.Proxy != nil {
+				payload["proxy"] = sc.Proxy
 			}
-			
-			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
 
-			totalDur += dur
+			bodyBytes, _ := json.Marshal(payload)
 
-			var res map[string]interface{}
-			json.Unmarshal(respBody, &res)
+			// Run 3 iterations to warm up session/CDP and get average
+			var totalDur time.Duration
+			iterations := 3
+			var lastIP string
+			var lastStatus string
 
-			status := fmt.Sprintf("%v", res["status"])
-			if status == "ok" {
-				sol := res["solution"].(map[string]interface{})
-				resData := fmt.Sprintf("%v", sol["response"])
-				
-				// Grab a snippet of the response or check for clearance cookie
-				cookies := sol["cookies"].([]interface{})
-				hasClearance := false
-				for _, c := range cookies {
-					cmap := c.(map[string]interface{})
-					if cmap["name"] == "cf_clearance" {
-						hasClearance = true
+			for i := 0; i < iterations; i++ {
+				req, _ := http.NewRequest("POST", stealthAPI, bytes.NewBuffer(bodyBytes))
+				req.Header.Set("Content-Type", "application/json")
+
+				start := time.Now()
+				resp, err := client.Do(req)
+				dur := time.Since(start)
+
+				if err != nil {
+					fmt.Printf("  [Iter %d] Error: %v\n", i+1, err)
+					continue
+				}
+
+				respBody, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+
+				totalDur += dur
+
+				var res map[string]interface{}
+				json.Unmarshal(respBody, &res)
+
+				status := fmt.Sprintf("%v", res["status"])
+				if status == "ok" {
+					sol := res["solution"].(map[string]interface{})
+					resData := fmt.Sprintf("%v", sol["response"])
+
+					// Grab a snippet of the response or check for clearance cookie
+					cookies := sol["cookies"].([]interface{})
+					hasClearance := false
+					for _, c := range cookies {
+						cmap := c.(map[string]interface{})
+						if cmap["name"] == "cf_clearance" {
+							hasClearance = true
+						}
 					}
-				}
-				
-				if hasClearance {
-					lastIP = fmt.Sprintf("HTML Length: %d, cf_clearance: true", len(resData))
-				} else {
-					lastIP = fmt.Sprintf("HTML Length: %d, cf_clearance: false", len(resData))
-				}
-				lastStatus = "ok"
-			} else {
-				lastStatus = fmt.Sprintf("error: %v", res["message"])
-			}
-			fmt.Printf("  [Iter %d] %v - %s\n", i+1, dur.Round(time.Millisecond), lastStatus)
-		}
 
-		avgDur := totalDur / time.Duration(iterations)
+					if hasClearance {
+						lastIP = fmt.Sprintf("HTML Length: %d, cf_clearance: true", len(resData))
+					} else {
+						lastIP = fmt.Sprintf("HTML Length: %d, cf_clearance: false", len(resData))
+					}
+					lastStatus = "ok"
+				} else {
+					lastStatus = fmt.Sprintf("error: %v", res["message"])
+				}
+				fmt.Printf("  [Iter %d] %v - %s\n", i+1, dur.Round(time.Millisecond), lastStatus)
+			}
+
+			avgDur := totalDur / time.Duration(iterations)
 			fmt.Printf("  -> Avg Latency: %v\n", avgDur.Round(time.Millisecond))
 			fmt.Printf("  -> IP Returned: %s\n\n", lastIP)
 		}
