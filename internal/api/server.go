@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"log"
 	"time"
 
@@ -105,6 +106,32 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 
 		startTs := time.Now().UnixMilli()
 
+		// --- HYBRID SOLVER FAST PATH ---
+		domainKey, err := sm.ClearanceCache.GenerateKey(req.URL, req.Proxy)
+		if err == nil {
+			if clearance, found := sm.ClearanceCache.Get(domainKey); found {
+				log.Printf("[hybrid] cache hit for key %s — trying native Go HTTP client", domainKey)
+				sol, httpErr := solver.ExecuteNativeRequest(c.UserContext(), &req, clearance.Cookies, clearance.UserAgent)
+				if httpErr == nil {
+					log.Printf("[hybrid] native Go HTTP client request succeeded for key %s", domainKey)
+					return c.JSON(&models.V1Response{
+						Status:         "ok",
+						Message:        "Challenge bypassed (cached session reused)",
+						StartTimestamp: startTs,
+						EndTimestamp:   time.Now().UnixMilli(),
+						Version:        solver.Version,
+						Solution:       sol,
+					})
+				}
+				if errors.Is(httpErr, solver.ErrChallengeDetected) {
+					log.Printf("[hybrid] Cloudflare challenge detected on key %s — falling back to browser solver", domainKey)
+				} else {
+					log.Printf("[hybrid] native request failed on key %s (%v) — falling back to browser solver", domainKey, httpErr)
+				}
+			}
+		}
+
+		// --- SLOW PATH FALLBACK (BROWSER SOLVER) ---
 		var sess *session.SessionContext
 		var isEphemeral bool
 
@@ -164,6 +191,14 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 				EndTimestamp:   time.Now().UnixMilli(),
 				Version:        solver.Version,
 			})
+		}
+
+		// Cache resolved clearance cookies
+		if resp.Status == "ok" && resp.Solution != nil && len(resp.Solution.Cookies) > 0 {
+			if domainKey, cacheErr := sm.ClearanceCache.GenerateKey(req.URL, req.Proxy); cacheErr == nil {
+				sm.ClearanceCache.Set(domainKey, resp.Solution.Cookies, resp.Solution.UserAgent, 30*time.Minute)
+				log.Printf("[hybrid] cached solver clearance cookies for key %s (TTL=30m)", domainKey)
+			}
 		}
 
 		return c.JSON(resp)

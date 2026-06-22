@@ -43,20 +43,22 @@ type pooledBrowser struct {
 }
 
 type Manager struct {
-	sessions map[string]*SessionContext
-	pool     map[string]*pooledBrowser
-	mu       sync.RWMutex
-	done     chan struct{} // Signals the reaper to stop
-	maxTabs  int           // Maximum concurrent tabs per pooled browser
+	sessions       map[string]*SessionContext
+	pool           map[string]*pooledBrowser
+	mu             sync.RWMutex
+	done           chan struct{} // Signals the reaper to stop
+	maxTabs        int           // Maximum concurrent tabs per pooled browser
+	ClearanceCache *ClearanceCache
 }
 
 // NewManager creates a Manager and starts the TTL reaper goroutine.
 func NewManager(maxTabs int) *Manager {
 	m := &Manager{
-		sessions: make(map[string]*SessionContext),
-		pool:     make(map[string]*pooledBrowser),
-		done:     make(chan struct{}),
-		maxTabs:  maxTabs,
+		sessions:       make(map[string]*SessionContext),
+		pool:           make(map[string]*pooledBrowser),
+		done:           make(chan struct{}),
+		maxTabs:        maxTabs,
+		ClearanceCache: NewClearanceCache(),
 	}
 	go m.reapLoop()
 	return m
