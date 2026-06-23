@@ -37,6 +37,14 @@ sequenceDiagram
 
 ### Docker
 
+You can run the pre-built Docker image directly from the GitHub Container Registry:
+
+```bash
+docker run -d -p 8191:8191 ghcr.io/annurdien/stealth:latest
+```
+
+Alternatively, you can build and run using `docker compose`:
+
 ```bash
 docker compose up -d
 ```
