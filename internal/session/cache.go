@@ -41,14 +41,24 @@ func (c *ClearanceCache) GenerateKey(targetURL string, proxy *models.ProxyConfig
 }
 
 func (c *ClearanceCache) Get(key string) (*CachedClearance, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	val, exists := c.store[key]
 	if !exists || time.Now().After(val.ExpiresAt) {
+		if exists {
+			delete(c.store, key)
+		}
 		return nil, false
 	}
 	return val, true
+}
+
+// Delete removes an entry from the cache
+func (c *ClearanceCache) Delete(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.store, key)
 }
 
 func (c *ClearanceCache) Set(key string, cookies []models.Cookie, ua string, ttl time.Duration) {

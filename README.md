@@ -16,7 +16,7 @@ sequenceDiagram
     participant Session as Session Manager
     participant Chrome as Chromium (go-rod)
     
-    Client->>API: POST /v2/request
+    Client->>API: POST /v1/request
     API->>Session: Get or Create Session
     Session->>Chrome: Launch/Attach (Stealth patches applied)
     API->>Chrome: Phase 1: Navigate Base Domain
@@ -71,7 +71,7 @@ Returns service status and version information.
 ### `GET /health`
 Returns a `200 OK` status. Used for container health checks.
 
-### `POST /v2/request`
+### `POST /v1/request`
 Primary endpoint for executing requests through the solver.
 
 #### Request Schema
@@ -152,7 +152,7 @@ Primary endpoint for executing requests through the solver.
 
 Sessions persist a browser instance, avoiding the overhead of launching Chromium for subsequent requests to the same target.
 
-#### `POST /v2/sessions`
+#### `POST /v1/sessions`
 Creates a new persistent session.
 
 **Request:**
@@ -169,8 +169,8 @@ Creates a new persistent session.
 - **`ttl`** (integer, optional): Time-to-live in seconds based on last usage. If omitted or `0`, the session never auto-expires.
 - **`proxy`** (object, optional): Proxy configuration tied to this session.
 
-#### `GET /v2/sessions`
+#### `GET /v1/sessions`
 Returns a list of all active session IDs.
 
-#### `DELETE /v2/sessions/:id`
+#### `DELETE /v1/sessions/:id`
 Terminates the specified session and cleans up its Chromium process.

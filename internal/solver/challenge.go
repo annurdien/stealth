@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-rod/rod"
 )
@@ -118,7 +119,15 @@ func WaitForChallengeResolution(page *rod.Page, timeoutMs int) error {
 		if DetectChallenge(page) == ChallengeNone {
 			return nil
 		}
+
+		start := time.Now()
 		_ = SolveTurnstile(page)
+
+		// If SolveTurnstile returns immediately (because it didn't find the iframe),
+		// we should sleep to avoid a tight busy-wait loop that burns CPU.
+		if time.Since(start) < 200*time.Millisecond {
+			time.Sleep(1 * time.Second)
+		}
 	}
 
 	return fmt.Errorf("challenge not resolved within %d seconds", deadline)
