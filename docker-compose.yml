@@ -9,6 +9,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8191
+      - MAX_TABS=10
       - HEADLESS=true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8191/health || exit 1"]
