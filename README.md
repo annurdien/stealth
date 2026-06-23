@@ -4,10 +4,11 @@ Stealth is a Go-based service for Cloudflare challenge resolution. It uses a hea
 
 ## Architecture & Flow
 
-Stealth operates using a two-phase process for each request:
+Stealth operates using a two-phase process for each request, enhanced by a fast-path caching mechanism:
 
-1. **Phase 1: Clearance**: Navigates to the target base domain, waits for challenge selectors to appear, and solves Turnstile CAPTCHAs via direct CDP mouse coordinate clicks (bypassing cross-origin iframe restrictions).
-2. **Phase 2: Execution**: Once the challenge clears, Stealth injects a native `fetch()` call into the cleared page context. This ensures all Cloudflare clearance cookies are automatically inherited by the request while allowing custom headers and request bodies to be sent.
+1. **Phase 1: Hybrid Fast Path**: Before launching a browser, Stealth checks an in-memory `ClearanceCache`. If valid Cloudflare cookies exist for the requested domain and proxy, the request is executed immediately using a native Go HTTP client (`imroc/req/v3`) that mimics Chrome's TLS fingerprint (JA3/JA4).
+2. **Phase 2: Clearance (Slow Path)**: If the cache misses or a challenge is detected, Stealth launches/reuses a persistent browser session. It navigates to the target, waits for challenge selectors, and solves Turnstile CAPTCHAs via direct CDP mouse coordinate clicks.
+3. **Phase 3: Execution**: Once the challenge clears, Stealth injects a native `fetch()` call into the cleared page context, capturing the response and caching the new clearance cookies for future requests.
 
 ```mermaid
 sequenceDiagram
@@ -59,8 +60,7 @@ Configuration is managed via environment variables.
 | `PORT` | `8191` | HTTP server port. |
 | `LOG_LEVEL` | `info` | Logging verbosity: `debug`, `info`, `warn`, `error`. |
 | `HEADLESS` | `true` | Runs Chrome in headless mode. Set to `false` for debugging. |
-| `PROMETHEUS_ENABLED` | `false` | Enables the Prometheus metrics endpoint. |
-| `PROMETHEUS_PORT` | `8192` | Port for the Prometheus metrics server. |
+| `MAX_TABS` | `10` | Maximum number of concurrent tabs (Incognito contexts) per physical browser pool. |
 | `CHROME_BIN` | | Optional override for the Chromium binary path. |
 
 ## API Reference
