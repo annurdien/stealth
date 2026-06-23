@@ -113,7 +113,9 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 
 	page, err := solver.CreateStealthPage(incognitoBrowser)
 	if err != nil {
-		incognitoBrowser.MustClose()
+		if closeErr := incognitoBrowser.Close(); closeErr != nil {
+			log.Printf("[session] warning: failed to close incognito browser: %v", closeErr)
+		}
 		<-pb.sem
 		m.mu.Lock()
 		pb.refCount--
@@ -123,7 +125,9 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 
 	if req.Proxy != nil && req.Proxy.Username != "" {
 		if err := solver.EnableProxyAuth(page, req.Proxy.Username, req.Proxy.Password); err != nil {
-			incognitoBrowser.MustClose()
+			if closeErr := incognitoBrowser.Close(); closeErr != nil {
+				log.Printf("[session] warning: failed to close incognito browser: %v", closeErr)
+			}
 			<-pb.sem
 			m.mu.Lock()
 			pb.refCount--
@@ -159,17 +163,15 @@ func (m *Manager) Create(req *models.SessionCreateRequest) (*SessionContext, err
 
 // Get retrieves a session by ID and updates its LastUsed timestamp.
 func (m *Manager) Get(id string) (*SessionContext, bool) {
-	m.mu.RLock()
-	sess, exists := m.sessions[id]
-	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
+	sess, exists := m.sessions[id]
 	if exists {
-		m.mu.Lock()
 		sess.LastUsed = time.Now()
 		if pb, ok := m.pool[sess.poolKey]; ok {
 			pb.lastUsed = time.Now()
 		}
-		m.mu.Unlock()
 	}
 
 	return sess, exists
@@ -185,7 +187,9 @@ func (m *Manager) Destroy(id string) bool {
 		return false
 	}
 
-	sess.Browser.MustClose()
+	if err := sess.Browser.Close(); err != nil {
+		log.Printf("[session] warning: failed to close browser for session %s: %v", id, err)
+	}
 	delete(m.sessions, id)
 
 	if pb, ok := m.pool[sess.poolKey]; ok {
@@ -216,13 +220,17 @@ func (m *Manager) DestroyAll() {
 	defer m.mu.Unlock()
 
 	for id, sess := range m.sessions {
-		sess.Browser.MustClose()
+		if err := sess.Browser.Close(); err != nil {
+			log.Printf("[session] warning: failed to close browser for session %s during shutdown: %v", id, err)
+		}
 		delete(m.sessions, id)
 		log.Printf("[session] shutdown: destroyed session %s", id)
 	}
 
 	for key, pb := range m.pool {
-		pb.browser.MustClose()
+		if err := pb.browser.Close(); err != nil {
+			log.Printf("[pool] warning: failed to close physical browser %q during shutdown: %v", key, err)
+		}
 		delete(m.pool, key)
 		log.Printf("[pool] shutdown: destroyed physical browser %q", key)
 	}
@@ -261,7 +269,9 @@ func (m *Manager) reapExpired() {
 			log.Printf("[session] reaping expired session %s (idle=%v TTL=%v)",
 				id, now.Sub(sess.LastUsed).Round(time.Second), sess.TTL)
 
-			sess.Browser.MustClose()
+			if err := sess.Browser.Close(); err != nil {
+				log.Printf("[session] warning: failed to close browser for expired session %s: %v", id, err)
+			}
 			delete(m.sessions, id)
 
 			if pb, ok := m.pool[sess.poolKey]; ok {
@@ -276,7 +286,9 @@ func (m *Manager) reapExpired() {
 	for key, pb := range m.pool {
 		if pb.refCount <= 0 && now.Sub(pb.lastUsed) > idleTimeout {
 			log.Printf("[pool] reaping idle physical browser %q (idle=%v)", key, now.Sub(pb.lastUsed).Round(time.Second))
-			pb.browser.MustClose()
+			if err := pb.browser.Close(); err != nil {
+				log.Printf("[pool] warning: failed to close idle physical browser %q: %v", key, err)
+			}
 			delete(m.pool, key)
 		}
 	}

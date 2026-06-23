@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -96,7 +97,7 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 			})
 		}
 
-		if len(req.URL) < 4 || (req.URL[:4] != "http" && req.URL[:5] != "https") {
+		if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
 			return c.Status(fiber.StatusBadRequest).JSON(models.V1Response{
 				Status:  "error",
 				Message: "Invalid URL scheme: only http:// and https:// are supported",
@@ -110,10 +111,16 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 		domainKey, err := sm.ClearanceCache.GenerateKey(req.URL, req.Proxy)
 		if err == nil {
 			if clearance, found := sm.ClearanceCache.Get(domainKey); found {
-				log.Printf("[hybrid] cache hit for key %s — trying native Go HTTP client", domainKey)
+				logKey := domainKey
+				// Redact proxy credentials if present (domainKey looks like scheme://host|proxyHash)
+				if idx := strings.LastIndex(logKey, "|"); idx > 0 {
+					logKey = logKey[:idx] + "|[REDACTED]"
+				}
+
+				log.Printf("[hybrid] cache hit for key %s — trying native Go HTTP client", logKey)
 				sol, httpErr := solver.ExecuteNativeRequest(c.UserContext(), &req, clearance.Cookies, clearance.UserAgent)
 				if httpErr == nil {
-					log.Printf("[hybrid] native Go HTTP client request succeeded for key %s", domainKey)
+					log.Printf("[hybrid] native Go HTTP client request succeeded for key %s", logKey)
 					return c.JSON(&models.V1Response{
 						Status:         "ok",
 						Message:        "Challenge bypassed (cached session reused)",
@@ -124,9 +131,10 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 					})
 				}
 				if errors.Is(httpErr, solver.ErrChallengeDetected) {
-					log.Printf("[hybrid] Cloudflare challenge detected on key %s — falling back to browser solver", domainKey)
+					log.Printf("[hybrid] Cloudflare challenge detected on key %s — falling back to browser solver", logKey)
+					sm.ClearanceCache.Delete(domainKey)
 				} else {
-					log.Printf("[hybrid] native request failed on key %s (%v) — falling back to browser solver", domainKey, httpErr)
+					log.Printf("[hybrid] native request failed on key %s (%v) — falling back to browser solver", logKey, httpErr)
 				}
 			}
 		}
@@ -197,7 +205,12 @@ func requestHandler(sm *session.Manager) fiber.Handler {
 		if resp.Status == "ok" && resp.Solution != nil && len(resp.Solution.Cookies) > 0 {
 			if domainKey, cacheErr := sm.ClearanceCache.GenerateKey(req.URL, req.Proxy); cacheErr == nil {
 				sm.ClearanceCache.Set(domainKey, resp.Solution.Cookies, resp.Solution.UserAgent, 30*time.Minute)
-				log.Printf("[hybrid] cached solver clearance cookies for key %s (TTL=30m)", domainKey)
+
+				logKey := domainKey
+				if idx := strings.LastIndex(logKey, "|"); idx > 0 {
+					logKey = logKey[:idx] + "|[REDACTED]"
+				}
+				log.Printf("[hybrid] cached solver clearance cookies for key %s (TTL=30m)", logKey)
 			}
 		}
 

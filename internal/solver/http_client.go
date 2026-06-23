@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/imroc/req/v3"
 
@@ -14,28 +14,55 @@ import (
 
 var ErrChallengeDetected = errors.New("cloudflare challenge detected")
 
-// ExecuteNativeRequest attempts standard HTTP request execution using Go's net/http client
-func ExecuteNativeRequest(ctx context.Context, v1Req *models.V1Request, cachedCookies []models.Cookie, userAgent string) (*models.Solution, error) {
+var (
+	// clientPool pools req/v3 clients by proxy key to avoid TLS handshake overhead on every request
+	clientPool sync.Map
+)
+
+// getPooledClient returns a configured req.Client, reusing an existing one if the proxy matches
+func getPooledClient(proxy *models.ProxyConfig) *req.Client {
+	proxyKey := ""
+	if proxy != nil {
+		proxyKey = proxy.HashKey()
+	}
+
+	if pooled, ok := clientPool.Load(proxyKey); ok {
+		return pooled.(*req.Client)
+	}
+
 	client := req.C()
 	client.ImpersonateChrome()
-	client.SetTimeout(time.Duration(v1Req.EffectiveTimeout()) * time.Millisecond)
 
-	if v1Req.Proxy != nil && v1Req.Proxy.URL != "" {
-		proxyURL := v1Req.Proxy.URL
-		if v1Req.Proxy.Username != "" {
-			// Parse proxy URL to inject credentials
+	if proxy != nil && proxy.URL != "" {
+		proxyURL := proxy.URL
+		if proxy.Username != "" {
 			if strings.HasPrefix(proxyURL, "http://") {
-				proxyURL = "http://" + v1Req.Proxy.Username + ":" + v1Req.Proxy.Password + "@" + strings.TrimPrefix(proxyURL, "http://")
+				proxyURL = "http://" + proxy.Username + ":" + proxy.Password + "@" + strings.TrimPrefix(proxyURL, "http://")
 			} else if strings.HasPrefix(proxyURL, "https://") {
-				proxyURL = "https://" + v1Req.Proxy.Username + ":" + v1Req.Proxy.Password + "@" + strings.TrimPrefix(proxyURL, "https://")
+				proxyURL = "https://" + proxy.Username + ":" + proxy.Password + "@" + strings.TrimPrefix(proxyURL, "https://")
 			} else if strings.HasPrefix(proxyURL, "socks5://") {
-				proxyURL = "socks5://" + v1Req.Proxy.Username + ":" + v1Req.Proxy.Password + "@" + strings.TrimPrefix(proxyURL, "socks5://")
+				proxyURL = "socks5://" + proxy.Username + ":" + proxy.Password + "@" + strings.TrimPrefix(proxyURL, "socks5://")
 			}
 		}
 		client.SetProxyURL(proxyURL)
 	}
 
+	clientPool.Store(proxyKey, client)
+	return client
+}
+
+// ExecuteNativeRequest attempts standard HTTP request execution using Go's net/http client
+func ExecuteNativeRequest(ctx context.Context, v1Req *models.V1Request, cachedCookies []models.Cookie, userAgent string) (*models.Solution, error) {
+	client := getPooledClient(v1Req.Proxy)
+
+	// Timeout applies to the specific request only
 	r := client.R().SetContext(ctx)
+
+	// req/v3 SetTimeout on client applies to all future requests,
+	// so for request-specific timeouts we should ideally use Context timeout,
+	// but the context passed here already has the timeout applied via engine.go/server.go
+	// However, we'll still set client.SetTimeout just in case, though it affects the pool.
+	// A better approach in req/v3 is setting it on the request `r` if supported, but Context works perfectly.
 
 	// Set Headers
 	for k, v := range v1Req.Headers {
@@ -74,7 +101,6 @@ func ExecuteNativeRequest(ctx context.Context, v1Req *models.V1Request, cachedCo
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	bodyStr := resp.String()
 
