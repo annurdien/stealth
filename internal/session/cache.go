@@ -1,8 +1,6 @@
 package session
 
 import (
-	"errors"
-	"net/url"
 	"sync"
 	"time"
 
@@ -29,7 +27,7 @@ func NewClearanceCache() *ClearanceCache {
 
 // GenerateKey combines scheme+host with proxy credentials to isolate sessions
 func (c *ClearanceCache) GenerateKey(targetURL string, proxy *models.ProxyConfig) (string, error) {
-	baseURL, err := extractBaseURL(targetURL)
+	baseURL, err := models.ExtractBaseURL(targetURL)
 	if err != nil {
 		return "", err
 	}
@@ -71,15 +69,4 @@ func (c *ClearanceCache) Set(key string, cookies []models.Cookie, ua string, ttl
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(ttl),
 	}
-}
-
-func extractBaseURL(rawURL string) (string, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", err
-	}
-	if u.Scheme == "" || u.Host == "" {
-		return "", errors.New("invalid URL: scheme or host is empty")
-	}
-	return u.Scheme + "://" + u.Host, nil
 }

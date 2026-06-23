@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -76,7 +75,7 @@ func Solve(ctx context.Context, page *rod.Page, req *models.V1Request) (*models.
 		}
 	}
 
-	baseURL, err := extractBaseURL(req.URL)
+	baseURL, err := models.ExtractBaseURL(req.URL)
 	if err != nil {
 		return errorResp(startTs, "Invalid URL: "+err.Error()), nil
 	}
@@ -260,19 +259,6 @@ func injectCookies(page *rod.Page, cookies []models.Cookie) error {
 		}
 	}
 	return nil
-}
-
-// extractBaseURL returns only the scheme and host from a full URL.
-// e.g. "https://example.com/api/data?q=1" → "https://example.com"
-func extractBaseURL(rawURL string) (string, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", err
-	}
-	if u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf("URL must include scheme and host")
-	}
-	return u.Scheme + "://" + u.Host, nil
 }
 
 // errorResp builds a V1Response for error cases.

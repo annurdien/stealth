@@ -1,5 +1,10 @@
 package models
 
+import (
+	"errors"
+	"net/url"
+)
+
 // V1Request is the input payload for POST /v1/request.
 type V1Request struct {
 	// URL is the target URL to navigate to and/or fetch from. Required.
@@ -111,4 +116,17 @@ type SessionCreateRequest struct {
 
 	// Proxy configures the proxy for this session's browser.
 	Proxy *ProxyConfig `json:"proxy,omitempty"`
+}
+
+// ExtractBaseURL returns only the scheme and host from a full URL.
+// e.g. "https://example.com/api/data?q=1" → "https://example.com"
+func ExtractBaseURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", errors.New("invalid URL: scheme or host is empty")
+	}
+	return u.Scheme + "://" + u.Host, nil
 }
